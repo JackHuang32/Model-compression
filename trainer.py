@@ -411,13 +411,14 @@ def decomposition():
     model = resnet.ResNet(resnet.BasicBlock, [3, 3, 3]).cuda()
     model = torch.nn.DataParallel(resnet.__dict__[args.arch]())
     checkpoint = torch.load('pretrained_models/resnet20-12fca82f.th')
-    #model.load_state_dict(checkpoint['state_dict'])
+    model.load_state_dict(checkpoint['state_dict'])
     
     #model = torch.load("model").cuda()
-    model = checkpoint
+    #model = checkpoint
     model.eval()
     model.cpu()
-    N = len(model.features._modules.keys())
+    print(type(checkpoint))
+    '''N = len(model.features._modules.keys())
     for i, key in enumerate(model.features._modules.keys()):
 
         if i >= N - 2:
@@ -427,13 +428,26 @@ def decomposition():
             decomposed = tucker_decomposition_conv_layer(conv_layer)
             model.features._modules[key] = decomposed
 
+        torch.save(model, 'decomposed_model')'''
+    model_dict = checkpoint['state_dict']
+    N = len(model_dict.keys())
+    for i, key in enumerate(checkpoint.keys()):
+
+        if i >= N - 2:
+            break
+        if isinstance(checkpoint[key], torch.nn.modules.conv.Conv2d):
+            conv_layer = checkpoint[key]
+            decomposed = tucker_decomposition_conv_layer(conv_layer)
+            checkpoint[key] = decomposed
+
         torch.save(model, 'decomposed_model')
+        print('done')
 
 
 if __name__ == '__main__':
     #main()
-    #decomposition()
-    my_test('pretrained_models/resnet20-12fca82f.th')
+    decomposition()
+    #my_test('pretrained_models/resnet20-12fca82f.th')
 
 
 
