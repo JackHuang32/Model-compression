@@ -417,7 +417,7 @@ def decomposition():
     #model = checkpoint
     model.eval()
     model.cpu()
-    print(type(checkpoint))
+    
     '''N = len(model.features._modules.keys())
     for i, key in enumerate(model.features._modules.keys()):
 
@@ -429,19 +429,15 @@ def decomposition():
             model.features._modules[key] = decomposed
 
         torch.save(model, 'decomposed_model')'''
-    model_dict = checkpoint['state_dict']
-    N = len(model_dict.keys())
-    for i, key in enumerate(checkpoint.keys()):
-
-        if i >= N - 2:
-            break
-        if isinstance(checkpoint[key], torch.nn.modules.conv.Conv2d):
-            conv_layer = checkpoint[key]
-            decomposed = tucker_decomposition_conv_layer(conv_layer)
-            checkpoint[key] = decomposed
-
+    #model_dict = checkpoint['state_dict']
+    for child in model.children():
+        for i,layer in enumerate(child.modules()):
+            if isinstance(layer, torch.nn.modules.conv.Conv2d):
+                print('check',layer)
+                conv_layer = layer
+                decomposed = tucker_decomposition_conv_layer(conv_layer)
+                child.modules()[i] = decomposed
         torch.save(model, 'decomposed_model')
-        print('done')
 
 
 if __name__ == '__main__':
