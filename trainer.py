@@ -354,6 +354,7 @@ def estimate_ranks(layer):
     """
 
     weights = layer.weight.data
+    print(type(weights))
     unfold_0 = tl.base.unfold(weights, 0) 
     unfold_1 = tl.base.unfold(weights, 1)
     _, diag_0, _, _ = VBMF.EVBMF(unfold_0)
@@ -418,25 +419,13 @@ def decomposition():
     model.eval()
     model.cpu()
     
-    '''N = len(model.features._modules.keys())
-    for i, key in enumerate(model.features._modules.keys()):
-
-        if i >= N - 2:
-            break
-        if isinstance(model.features._modules[key], torch.nn.modules.conv.Conv2d):
-            conv_layer = model.features._modules[key]
-            decomposed = tucker_decomposition_conv_layer(conv_layer)
-            model.features._modules[key] = decomposed
-
-        torch.save(model, 'decomposed_model')'''
-    #model_dict = checkpoint['state_dict']
-    for child in model.children():
-        for i,layer in enumerate(child.modules()):
+    for layers in model.modules():
+        for name,layer in layers.named_modules():
             if isinstance(layer, torch.nn.modules.conv.Conv2d):
-                print('check',layer)
                 conv_layer = layer
+                #print(layer)
                 decomposed = tucker_decomposition_conv_layer(conv_layer)
-                child.modules()[i] = decomposed
+                setattr(model,name,nn.Sequential(*decomposed))
         torch.save(model, 'decomposed_model')
 
 
@@ -444,6 +433,3 @@ if __name__ == '__main__':
     #main()
     decomposition()
     #my_test('pretrained_models/resnet20-12fca82f.th')
-
-
-
