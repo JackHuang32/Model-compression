@@ -354,6 +354,8 @@ def estimate_ranks(layer):
     """
 
     weights = layer.weight.data
+    weights = weights.numpy()
+    print(weights)
     print(type(weights))
     unfold_0 = tl.base.unfold(weights, 0) 
     unfold_1 = tl.base.unfold(weights, 1)
