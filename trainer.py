@@ -154,12 +154,12 @@ def main():
                 'epoch': epoch + 1,
                 'state_dict': model.state_dict(),
                 'best_prec1': best_prec1,
-            }, is_best, filename=os.path.join(args.save_dir, 'checkpoint.th'))
+            }, is_best, filename=os.path.join(args.save_dir, 'decomp_checkpoint.th'))
 
         save_checkpoint({
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
-        }, is_best, filename=os.path.join(args.save_dir, 'model.th'))
+        }, is_best, filename=os.path.join(args.save_dir, 'decomp_model.th'))
 
 
 def train(train_loader, model, criterion, optimizer, epoch):
@@ -195,8 +195,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
         loss.backward()
         optimizer.step()
 
-        output = output.float()
-        loss = loss.float()
+        output = output.double()
+        loss = loss.double()
         # measure accuracy and record loss
         prec1 = accuracy(output.data, target)[0]
         losses.update(loss.item(), input.size(0))
@@ -214,6 +214,105 @@ def train(train_loader, model, criterion, optimizer, epoch):
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})'.format(
                       epoch, i, len(train_loader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
+
+
+def trainer(model):
+    global args, best_prec1, val_loader
+    args = parser.parse_args()
+
+
+    # Check the save_dir exists or not
+    if not os.path.exists(args.save_dir):
+        os.makedirs(args.save_dir)
+    #model = torch.nn.DataParallel(resnet.__dict__[args.arch]())
+    model.cuda()
+
+    # optionally resume from a checkpoint
+    if args.resume:
+        if os.path.isfile(args.resume):
+            print("=> loading checkpoint '{}'".format(args.resume))
+            checkpoint = torch.load(args.resume)
+            args.start_epoch = checkpoint['epoch']
+            best_prec1 = checkpoint['best_prec1']
+            model.load_state_dict(checkpoint['state_dict'])
+            print("=> loaded checkpoint '{}' (epoch {})"
+                  .format(args.evaluate, checkpoint['epoch']))
+        else:
+            print("=> no checkpoint found at '{}'".format(args.resume))
+
+    cudnn.benchmark = True
+
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+
+    train_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR10(root='./data', train=True, transform=transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(32, 4),
+            transforms.ToTensor(),
+            normalize,
+        ]), download=True),
+        batch_size=args.batch_size, shuffle=True,
+        num_workers=args.workers, pin_memory=True)
+
+    val_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR10(root='./data', train=False, transform=transforms.Compose([
+            transforms.ToTensor(),
+            normalize,
+        ])),
+        batch_size=128, shuffle=False,
+        num_workers=args.workers, pin_memory=True)
+
+    # define loss function (criterion) and optimizer
+    criterion = nn.CrossEntropyLoss().cuda()
+
+    if args.half:
+        model.half()
+        criterion.half()
+
+    optimizer = torch.optim.SGD(model.parameters(), args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
+
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer,
+                                                        milestones=[100, 150], last_epoch=args.start_epoch - 1)
+
+    if args.arch in ['resnet1202', 'resnet110']:
+        # for resnet1202 original paper uses lr=0.01 for first 400 minibatches for warm-up
+        # then switch back. In this setup it will correspond for first epoch.
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = args.lr*0.1
+
+
+    if args.evaluate:
+        validate(val_loader, model, criterion)
+        return
+
+    for epoch in range(args.start_epoch, args.epochs):
+
+        # train for one epoch
+        print('current lr {:.5e}'.format(optimizer.param_groups[0]['lr']))
+        train(train_loader, model, criterion, optimizer, epoch)
+        lr_scheduler.step()
+
+        # evaluate on validation set
+        prec1 = validate(val_loader, model, criterion)
+
+        # remember best prec@1 and save checkpoint
+        is_best = prec1 > best_prec1
+        best_prec1 = max(prec1, best_prec1)
+
+        if epoch > 0 and epoch % args.save_every == 0:
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'best_prec1': best_prec1,
+            }, is_best, filename=os.path.join(args.save_dir, 'decomp_checkpoint.th'))
+
+        save_checkpoint({
+            'state_dict': model.state_dict(),
+            'best_prec1': best_prec1,
+        }, is_best, filename=os.path.join(args.save_dir, 'decomp_model.th'))
 
 
 def validate(val_loader, model, criterion):
@@ -241,8 +340,8 @@ def validate(val_loader, model, criterion):
             output = model(input_var)
             loss = criterion(output, target_var)
 
-            output = output.float()
-            loss = loss.float()
+            output = output.double()
+            loss = loss.double()
 
             # measure accuracy and record loss
             prec1 = accuracy(output.data, target)[0]
@@ -302,7 +401,7 @@ def accuracy(output, target, topk=(1,)):
 
     res = []
     for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0)
+        correct_k = correct[:k].view(-1).double().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
@@ -426,7 +525,13 @@ def decomposition():
     model = torch.nn.DataParallel(resnet.__dict__[args.arch]())
     checkpoint = torch.load('pretrained_models/resnet20-12fca82f.th')
     model.load_state_dict(checkpoint['state_dict'])
-    
+    #print(type(checkpoint))
+    #print(checkpoint.keys())
+    for p in model.parameters():
+        print(p.size())
+    total = sum([p.numel() for p in model.parameters()])
+        
+    print('total:',total)
     #model = torch.load("model").cuda()
     #model = checkpoint
     model.eval()
@@ -448,11 +553,18 @@ def decomposition():
     decomposed_layer.pop(0)
     for name,layer in decomposed_layer:
         set_layer(model,name,layer)
-    torch.save(model.state_dict(), 'decomposed_model.pt')
-    print(model)
+    torch.save({'state_dict':model.state_dict()}, 'decomposed_model')
+    trainer(model)
+    for p in model.parameters():
+        print(p.size())
+    total = sum([p.numel() for p in model.parameters()])
+        
+    print('total:',total)
 
 
 if __name__ == '__main__':
     #main()
     decomposition()
-    #my_test('pretrained_models/resnet20-12fca82f.th')
+    #my_test('decomposed_model.th')
+
+
