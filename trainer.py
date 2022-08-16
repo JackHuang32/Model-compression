@@ -187,7 +187,9 @@ def train(train_loader, model, criterion, optimizer, epoch):
             input_var = input_var.half()
 
         # compute output
+        #input_var = input_var.double()
         output = model(input_var)
+        #output = output.double()
         loss = criterion(output, target_var)
 
         # compute gradient and do SGD step
@@ -195,8 +197,8 @@ def train(train_loader, model, criterion, optimizer, epoch):
         loss.backward()
         optimizer.step()
 
-        output = output.double()
-        loss = loss.double()
+        output = output.float()
+        loss = loss.float()
         # measure accuracy and record loss
         prec1 = accuracy(output.data, target)[0]
         losses.update(loss.item(), input.size(0))
@@ -340,8 +342,8 @@ def validate(val_loader, model, criterion):
             output = model(input_var)
             loss = criterion(output, target_var)
 
-            output = output.double()
-            loss = loss.double()
+            output = output.float()
+            loss = loss.float()
 
             # measure accuracy and record loss
             prec1 = accuracy(output.data, target)[0]
@@ -401,7 +403,7 @@ def accuracy(output, target, topk=(1,)):
 
     res = []
     for k in topk:
-        correct_k = correct[:k].view(-1).double().sum(0)
+        correct_k = correct[:k].view(-1).float().sum(0)
         res.append(correct_k.mul_(100.0 / batch_size))
     return res
 
@@ -549,11 +551,12 @@ def decomposition():
                 decomposed_layer.append((name,decomposed))
                 
         #torch.save(model.state_dict(), 'decomposed_model.pt')
-    print(decomposed_layer)
     decomposed_layer.pop(0)
     for name,layer in decomposed_layer:
         set_layer(model,name,layer)
     torch.save({'state_dict':model.state_dict()}, 'decomposed_model')
+    print(model)
+    model.float()
     trainer(model)
     for p in model.parameters():
         print(p.size())
